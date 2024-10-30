@@ -1,2 +1,5 @@
 [datalad "dataset"]
 	id = d1d8c034-0bd1-49b5-bb5b-d1864ce35e06
+[datalad "containers.fsl-6-0-4"]
+	image = fair_test/inputs/containers/.datalad/environments/fsl-6-0-4/image
+	cmdexec = apptainer run -e {img} {cmd}
