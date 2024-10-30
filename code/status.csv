@@ -1,2 +1,3 @@
 job_name,job_id,req_disk_gb,host,location,job_dir,status,start,update,traceback
-test,1111,40,geminis,/tmp,/tmp/job-test-ramirezd,completed,2024/10/29 16:14:45,2024/10/29 17:31:00,
+sub-001B_bet,364682,40.0,larmor,/tmp,/tmp/job-sub-001B_bet-ramirezd,completed,2024/10/30 12:16:49,2024/10/30 12:19:05,
+sub-002A_bet,88295,40.0,moca,/tmp,/tmp/job-sub-002A_bet-ramirezd,completed,2024/10/30 12:16:51,2024/10/30 12:19:22,

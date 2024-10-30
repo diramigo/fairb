@@ -6,6 +6,7 @@ See:
 Wagner, A. S., Waite, L. K., Wierzba, M., Hoffstaedter, F., Waite, A. Q., Poldrack, B., ... & Hanke, M. (2022). FAIRly big: A framework for computationally reproducible processing of large-scale data. Scientific data, 9(1), 80.
 """
 
+import os
 from argparse import ArgumentParser
 from pathlib import Path
 import subprocess
@@ -30,7 +31,7 @@ def create_lockfiles(job_root):
     return str(status_lockfile), str(push_lockfile)
 
 def create_status_csv(job_root):
-    status_csv = Path(job_root) / 'status.csv'
+    status_csv = (Path(job_root) / 'status.csv').absolute()
     if not status_csv.exists():
         status_df = pd.DataFrame({'job_name':[],'job_id':[],'host':[],'location':[],'req_disk_gb':[],'traceback':[],'status':[]})
         
@@ -51,7 +52,7 @@ def write_script(job_root, job_name, dl_cmd, container, commit, inputs, outputs,
     script = f"""
     #!/bin/bash
     
-    python {run_job_py} --job_name {job_name} --dl_cmd {dl_cmd} --container {container} --commit {commit} --inputs {inputs} --outputs {outputs} --is_explicit {is_explicit} --output_datasets {output_datasets} --prereq_get {prereq_get} --message {message} --super_id {super_id} --clone_target {clone_target} --push_target {push_target} --ephemeral_location {ephemeral_location} --req_disk_gb {req_disk_gb} --status_lockfile {status_lockfile} --push_lockile {push_lockfile} --status_csv {status_csv}
+    python {run_job_py} --job_name {job_name} --dl_cmd '{dl_cmd}' --container {container} --commit {commit} --inputs {inputs} --outputs {outputs} --is_explicit {is_explicit} --output_datasets {output_datasets} --preget_inputs {prereq_get} --message {message} --super_ds_id {super_id} --clone_target {clone_target} --push_target {push_target} --ephemeral_location {ephemeral_location} --req_disk_gb {req_disk_gb} --status_lockfile {status_lockfile} --push_lockfile {push_lockfile} --status_csv {status_csv}
     """
     
     with open(script_path, 'w') as script_file:
@@ -60,22 +61,26 @@ def write_script(job_root, job_name, dl_cmd, container, commit, inputs, outputs,
     return script_path
     
 
-def sendjob(queue, slots, vmem, env_vars, h_rt, script_path):
+def sendjob(queue, slots, vmem, h_rt, env_vars, script_path):
+    
     
     if h_rt is None:
         h_rt = '24:00:00'
     if slots < 1 or slots is None:
         slots = 1
     
+    slots=str(slots)
+    vmem=str(vmem)
     
     cmd = ['qsub', '-q', queue, '-pe', 'smp', slots,  '-l', f'h_vmem={vmem}M', '-l', f'h_rt={h_rt}', '-cwd']
     
     
-    if env_vars is str:
+    if isinstance(env_vars, str):
         env_vars = json.loads(env_vars)   
         for env_var_name, env_var_value in env_vars.items():
             cmd += ['-v', f'{env_var_name}={env_var_value}']
     
+    cmd+= ['-v', f"PATH={os.getenv('PATH')}"]
 
     cmd+= [script_path]
     
@@ -103,7 +108,7 @@ if __name__ == '__main__':
     else:
         raise Exception("Job config isn't a csv or tsv file.")
     
-    job_config_cols = ['job_name','dl_cmd','container','commit','inputs','outputs','is_explicit','output_datasets','prereq_get','message','super_id','clone_target','push_target','ephemeral_location','req_disk_gb','queue','slots','vmem','h_rt','env_vars']
+    job_config_cols = ['job_name','dl_cmd','container','commit','inputs','outputs','is_explicit','output_datasets','prereq_get','message','super_id','clone_target','push_target','ephemeral_location','req_disk_gb','queue','slots','vmem','h_rt','env_vars','batch']
     
     
     if [col for col in job_config_df.columns.to_list() if  col not in job_config_cols]:
@@ -128,4 +133,5 @@ if __name__ == '__main__':
         script_path = write_script(job_root, job['job_name'], job['dl_cmd'], job['container'], job['commit'], job['inputs'], job['outputs'], job['is_explicit'], job['output_datasets'], job['prereq_get'], job['message'], job['super_id'], job['clone_target'], job['push_target'], job['ephemeral_location'], job['req_disk_gb'], status_lockfile, push_lockfile, status_csv)
         
         
-        # sendjob(job['queue'], job['slots'], job['vmem'], job['env_vars'], script_path)
+        
+        sendjob(job['queue'], job['slots'], job['vmem'], job['h_rt'], job['env_vars'], script_path)

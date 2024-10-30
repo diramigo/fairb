@@ -66,16 +66,23 @@ if __name__ == '__main__':
     host = os.uname().nodename
     user= os.getenv('USER')
     
-    if job_name is None:
-        job_name == 'test'
-    if super_ds_id is None:
+    if job_name == 'None':
+        job_name = 'test'
+    if super_ds_id == 'None':
         raise Exception("No superdataset ID.")
-    if dl_cmd is None:
+    if dl_cmd == 'None':
         raise Exception("No datalad run command.")
-    if clone_target is None:
+    if clone_target == 'None':
         raise Exception("No clone target.")
-    if push_target is None:
+    if push_target == 'None':
         raise Exception("No push target.")
+    if 'None' in inputs:
+        inputs = None
+    if 'None' in outputs:
+        outputs = None
+    
+    if isinstance(req_disk_gb, str):
+        req_disk_gb = float(req_disk_gb)
 
     status_lock = FileLock(status_lockfile)
     push_lock = FileLock(push_lockfile)
@@ -202,7 +209,7 @@ if __name__ == '__main__':
         return status_df
 
 
-    def update_status(status_csv, job_name, job_id, host, location, status, update, traceback=None):
+    def update_status(status_csv, job_name, job_id, host, location, status, update):
         """
         Update an existing job status.
         """
@@ -211,7 +218,7 @@ if __name__ == '__main__':
         
         is_job = (
         (status_df['job_name'] == job_name) &
-        (status_df['job_id'].astype('string') == job_id) &
+        (status_df['job_id'] == job_id) &
         (status_df['host'] == host) &
         (status_df['location'] == location) 
         )
@@ -219,8 +226,8 @@ if __name__ == '__main__':
         status_df = (status_df
         .assign(
             status = lambda df_: df_['status'].mask(is_job, status),
-            update = update,
-            traceback = lambda df_: df_['traceback'].mask(is_job, traceback)
+            update = lambda df_: df_['update'].mask(is_job, update)
+            # traceback = lambda df_: df_['traceback'].mask(is_job, traceback)
             )
         )
         
@@ -289,33 +296,17 @@ if __name__ == '__main__':
         subprocess.run(['chmod', '-R', '+w', job_dir])
         subprocess.run(['rm', '-rf', job_dir])
 
-    def excepthook(exctype, value, tb):
-        
-        with status_lock:
-            update_status(status_csv, job_name, job_id, host, location, status='error', update=datetime.today().strftime("%Y/%m/%d %H:%M:%S"), traceback=tb)
-            
-        try:
-            cleanup(job_dir)
-        except:
-            pass
-        
-        print('Type:', exctype)
-        print('Value:', value)
-        print('Traceback:', tb)
-
-
-    sys.excepthook = excepthook
         
     #######################
     # Resource management #
     #######################
-    if ephemeral_locations is None or None in ephemeral_locations:
+    if 'None' in ephemeral_locations:
         ephemeral_locations = ['/tmp']
         
     tmp, not_tmp_locations = get_locations(ephemeral_locations)
 
     # manage available disk space
-    if req_disk_gb is None or req_disk_gb < 0:
+    if req_disk_gb == 'None' or req_disk_gb < 0:
         req_disk_gb = 0
         
     with status_lock:
@@ -348,9 +339,28 @@ if __name__ == '__main__':
             job_dir = str(Path(location) / f'job-{job_name}-{user}')
             set_status(status_csv, job_name, job_id, req_disk_gb, host, location, job_dir, status='ongoing', start=datetime.today().strftime("%Y/%m/%d %H:%M:%S"))
         else:
-            set_status(status_csv, job_name, job_id, req_disk_gb, host, location, job_dir=None, status='no-space', start=datetime.today().strftime("%Y/%m/%d %H:%M:%S"))
+            set_status(status_csv, job_name, job_id, req_disk_gb, host, location=None, job_dir=None, status='no-space', start=datetime.today().strftime("%Y/%m/%d %H:%M:%S"))
             raise Exception("Coulnd't find a place with enough disk space.")
 
+
+    def excepthook(exctype, value, tb):
+        
+        try:
+            cleanup(job_dir)
+        except:
+            pass
+        
+        # error_msg = f'{exctype} {value}'
+        
+        with status_lock:
+            update_status(status_csv, job_name, job_id, host, location, status='error', update=datetime.today().strftime("%Y/%m/%d %H:%M:%S"))
+            
+        print('Type:', exctype)
+        print('Value:', value)
+        print('Traceback:', tb)
+
+
+    sys.excepthook = excepthook
 
     ########################
     #        CLONE         #
@@ -379,28 +389,33 @@ if __name__ == '__main__':
     
     super_clone_target = f'{clone_ria_prefix}{clone_target}#{super_ds_id}'
 
+    print("Cloning superdataset.")
     dl.clone(source=super_clone_target, path=job_dir, git_clone_opts=['-c annex.private=true'])
+    print("Change working directory to superdataset clone.")
     os.chdir(job_dir)
 
     push_path = str(Path(push_target) / Path(super_ds_id[:3]) / Path(super_ds_id[3:]))
+    
+    print("Add git remote.")
     git_add_remote(push_path, 'cwd')
 
     ds = dl.Dataset(job_dir)
     sd = pd.DataFrame(ds.subdatasets())
+    
 
-    if output_datasets is None or None in output_datasets:
+    if 'None' in output_datasets:
         output_datasets = []
 
-    if output_datasets and  (pd.Series(output_datasets).isin(sd['gitmodule_name']).all()):
+    if output_datasets and not (pd.Series(output_datasets).isin(sd['gitmodule_name']).all()):
         raise Exception("Not all output datasets are found.")
-
+    
     # Get output datasets if any.
     # Right now, this solution assumes output subdatasets don't have subdatasets themselves.
     # The next release of datalad should include the `--reckless private` option for both
     # clone and get. This will also have issues if the subdataset at the clone target is not at the same branch as the superdataset. 
     # If one doesn't mind storing an uuid for each job, then `git annex dead here` might be a better option for now if the above things are an issue.
 
-
+    print("Clone output subdatasets if any.")
     for output_dataset in output_datasets:
         sd_id = sd.query("gitmodule_name == @output_dataset")['gitmodule_datalad-id'].iat[0]
         get_private_subdataset(clone_target, output_dataset, sd_id)
@@ -408,15 +423,19 @@ if __name__ == '__main__':
         push_path = str(Path(push_target) / Path(sd_id[:3]) / Path(sd_id[3:]))
         git_add_remote(push_path, output_dataset)
         
+    
+    if not Path('outputs').exists():
+        Path('outputs').mkdir()
         
     # Checkout to job branch
+    print("Checkout branch.")
     branch_name = f'job-{job_name}'
     for output_dataset in output_datasets:
-        do_checkout(output_dataset, branch_name)
+        do_checkout(branch_name, output_dataset)
     do_checkout(branch_name, 'cwd')
 
     # Preget inputs
-    if preget_inputs is None or None in preget_inputs:
+    if 'None' in preget_inputs:
         preget_inputs = []
     for preget_input in preget_inputs:
         dl.get(preget_input)
@@ -424,17 +443,18 @@ if __name__ == '__main__':
     ###############################
     #       DATALAD RUN JOB       #
     ###############################
-
-    if message is None:
+    print("Run command.")
+    if message == 'None':
         message = branch_name
+    
 
-    if commit:
+    if commit != "None":
         dl.rerun(
             revision=commit,
             explicit=is_explicit
         )
         
-    elif container:
+    elif container != "None":
         dl.containers_run(
             dl_cmd,
             container_name=container,
@@ -458,15 +478,16 @@ if __name__ == '__main__':
     ###############################
         
 
+    print("Push back results.")
     # push annex data
     dl.push(
-        path='.',
+        dataset='.',
         to='output_ria-storage',
     )
 
     for output_dataset in output_datasets:
         dl.push(
-            path=output_dataset,
+            dataset=output_dataset,
             to='output_ria-storage',
         )
         
@@ -482,6 +503,7 @@ if __name__ == '__main__':
     #         CLEAN DISK          #
     ###############################
 
+    print("Delete ephemeral clone.")
     cleanup(job_dir)
 
     with status_lock:
@@ -492,8 +514,7 @@ if __name__ == '__main__':
                       host, 
                       location, 
                       status='completed', 
-                      update=datetime.today().strftime("%Y/%m/%d %H:%M:%S"), 
-                      traceback=None
+                      update=datetime.today().strftime("%Y/%m/%d %H:%M:%S")
                       )
 
     print("Job completed succesfully.")
