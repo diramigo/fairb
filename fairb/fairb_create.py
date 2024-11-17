@@ -5,6 +5,7 @@ import json
 
 import datalad.api as dl
 import pandas as pd
+from .core import FairB
 
 
 def main():
@@ -88,15 +89,15 @@ def main():
     # Add .gitignore
     gitignore_path = Path(super_dataset) / '.gitignore'
     with open(gitignore_path, 'w') as gitignore_file:
-        gitignore_file.write('.fairlybig')
+        gitignore_file.write('.fairb')
     dl.save(dataset=super_dataset, message='Add .gitignore')
     
     # Get datalad id
     super_dataset_id = dl.Dataset(super_dataset).id
     
     # Create super_dataset's output and input ria
-    output_ria_path = str((Path(super_dataset) / '.fairlybig' / 'output_ria').absolute())
-    input_ria_path = str((Path(super_dataset) / '.fairlybig' / 'input_ria').absolute())
+    output_ria_path = str((Path(super_dataset) / '.fairb' / 'output_ria').absolute())
+    input_ria_path = str((Path(super_dataset) / '.fairb' / 'input_ria').absolute())
     
     dl.create_sibling_ria(
         f'ria+file://{output_ria_path}',
@@ -146,35 +147,14 @@ def main():
     
     user = os.getenv('USER')
     
-        
-    config_dict ={
-     'job_name':[None],
-     'dl_cmd':[None],
-     'container':[container_name],
-     'inputs':[None],
-     'outputs':[None],
-     'is_explicit':[False],
-     'output_datasets':[output_datasets_string],
-     'prereq_get':[None],
-     'message':[None],
-     'super_id':super_dataset_id,
-     'clone_target':[input_ria_path],
-     'push_target':[output_ria_path],
-     'ephemeral_location':["/tmp /misc/{host}[0-9]/"+user],
-     'req_disk_gb':[None],
-     'queue':['all.q'],
-     'slots':[None],
-     'vmem':[None],
-     'h_rt':[None],
-     'env_vars':[None],
-     'batch':['001']
-    }
     
-    fairlybig_path = Path(super_dataset) / '.fairlybig'
-    (fairlybig_path / 'code').mkdir()
     
-    with open(str(fairlybig_path / 'fairb_config.json'), 'w') as json_file:
-        json.dump(config_dict, json_file)
+    fairb_path = Path(super_dataset) / '.fairlybig'
+    fairb_project = FairB('fairb', super_dataset_id, str(fairb_path.resolve()), input_datasets, output_datasets, container_name, input_ria_path, output_ria_path)
+    fairb_project.to_json()
+    
+    # with open(str(fairlybig_path / 'fairb_config.json'), 'w') as json_file:
+    #     json.dump(config_dict, json_file)
    
     
     # pd.DataFrame(job_config_dict).to_csv(str(fairlybig_path / 'code' / 'job_config.csv'), index=False)
