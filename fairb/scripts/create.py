@@ -5,10 +5,10 @@ import json
 
 import datalad.api as dl
 import pandas as pd
-from .core import FairB
+from fairb.core import FairB
 
 
-def main():
+def main(args):
 
     parser = ArgumentParser(
         prog="fairb_create",
@@ -53,7 +53,7 @@ def main():
         default="apptainer run -e {img} {cmd}"
         )
 
-    args = parser.parse_args()
+    args = parser.parse_args(args)
     super_dataset = args.super_dataset
     input_datasets = args.input_datasets
     output_datasets = args.output_datasets
@@ -148,16 +148,11 @@ def main():
     user = os.getenv('USER')
     
     
-    
-    fairb_path = Path(super_dataset) / '.fairlybig'
+    # Create fairb project
+    fairb_path = Path(super_dataset) / '.fairb'
     fairb_project = FairB('fairb', super_dataset_id, str(fairb_path.resolve()), input_datasets, output_datasets, container_name, input_ria_path, output_ria_path)
     fairb_project.to_json()
     
-    # with open(str(fairlybig_path / 'fairb_config.json'), 'w') as json_file:
-    #     json.dump(config_dict, json_file)
-   
-    
-    # pd.DataFrame(job_config_dict).to_csv(str(fairlybig_path / 'code' / 'job_config.csv'), index=False)
     
 if __name__ == '__main__':
     main()

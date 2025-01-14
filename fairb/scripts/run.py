@@ -6,7 +6,7 @@ See:
 Wagner, A. S., Waite, L. K., Wierzba, M., Hoffstaedter, F., Waite, A. Q., Poldrack, B., ... & Hanke, M. (2022). FAIRly big: A framework for computationally reproducible processing of large-scale data. Scientific data, 9(1), 80.
 """
 
-if __name__ == '__main__':
+def main(args):
 
     from argparse import ArgumentParser
     import sys
@@ -15,78 +15,77 @@ if __name__ == '__main__':
     import subprocess
     from pathlib import Path
     import re
-    from filelock import FileLock
     from datetime import datetime
 
+    from filelock import FileLock
     import datalad.api as dl
     import pandas as pd
+    import numpy as np
+    from fairb.core import FairB
 
 
     parser = ArgumentParser()
-    parser.add_argument('--job_name', nargs=1, help='<Required> Set flag', required=True)
-    parser.add_argument('--status_csv', nargs=1, help='<Required> Set flag', required=True)
-    parser.add_argument('--status_lockfile', nargs=1, help='<Required> Set flag', required=True)
-    parser.add_argument('--super_ds_id', nargs=1, help='<Required> Set flag', required=True)
-    parser.add_argument('--clone_target', nargs=1, help='<Required> Set flag', required=True)
-    parser.add_argument('--push_target', nargs=1, help='<Required> Set flag', required=True)
-    parser.add_argument('--push_lockfile', nargs=1, help='<Required> Set flag', required=True)
-    parser.add_argument('--inputs', nargs='+', help='<Required> Set flag', required=True)
-    parser.add_argument('--outputs', nargs='+', help='<Required> Set flag', required=True)
-    parser.add_argument('--output_datasets', nargs='+', help='<Required> Set flag', required=True)
-    parser.add_argument('--preget_inputs', nargs='+', help='<Required> Set flag', required=True)
-    parser.add_argument('--is_explicit', nargs=1, help='<Required> Set flag', required=True)
-    parser.add_argument('--dl_cmd', nargs=1, help='<Required> Set flag', required=True)
-    parser.add_argument('--commit', nargs=1, help='<Required> Set flag', required=True)
-    parser.add_argument('--container', nargs=1, help='<Required> Set flag', required=True)
-    parser.add_argument('--message', nargs=1, help='<Required> Set flag', required=True)
-    parser.add_argument('--ephemeral_locations', nargs='+', help='<Required> Set flag', required=True)
-    parser.add_argument('--req_disk_gb', nargs=1, help='<Required> Set flag', required=True)
+    parser.add_argument('--job_name', type=str, help='Job name within job config file.', required=True)
+    parser.add_argument('--fairb', type=str, help='Path to fairb project..', required=True)
+    
+    args = parser.parse_args(args)
+    
+    fairb = FairB.from_json(Path(args.fairb) / 'fairb.json')
+    fairb.read_job_config()
+    job_config = fairb.job_config_df.replace(np.nan, None).query("job_name == @args.job_name").iloc[0]
+    
+    job_name = args.job_name
+    
+    status_csv = fairb.job_status_file
+    status_lockfile = fairb.status_lockfile
+    super_ds_id = fairb.super_id
+    clone_target = fairb.clone_target
+    push_target = fairb.push_target
+    push_lockfile = fairb.push_lockfile
+    
+    inputs = job_config.inputs
+    outputs = job_config.outputs
+    output_datasets = job_config.output_datasets
+    preget_inputs = job_config.prereq_get
+    
+    if isinstance(inputs, str):
+        inputs = inputs.split()
+    if isinstance(outputs, str):
+        outputs = outputs.split()
+        
+    if isinstance(output_datasets, str):
+        output_datasets = output_datasets.split()
+    else:
+        output_datasets = []
+        
+    if isinstance(preget_inputs, str):
+        preget_inputs = preget_inputs.split()
+    else:
+        preget_inputs = []
+           
+    is_explicit = job_config.is_explicit
+    dl_cmd = job_config.dl_cmd
+    commit = job_config.commit
+    container = job_config.container
+    message = job_config.message
+    ephemeral_locations = job_config.ephemeral_location
+    req_disk_gb = job_config.req_disk_gb
 
-    args = parser.parse_args()
-    job_name = args.job_name[0]
-    job_id = os.getpid()   
-    status_csv = args.status_csv[0]
-    status_lockfile = args.status_lockfile[0]
-    super_ds_id = args.super_ds_id[0]
-    clone_target = args.clone_target[0]
-    push_target = args.push_target[0]
-    push_lockfile = args.push_lockfile[0]
-    inputs = args.inputs
-    outputs = args.outputs
-    output_datasets = args.output_datasets
-    preget_inputs = args.preget_inputs
-    is_explicit = bool(args.is_explicit[0])
-    dl_cmd = args.dl_cmd[0]
-    commit = args.commit[0]
-    container = args.container[0]
-    message = args.message[0]
-    ephemeral_locations = args.ephemeral_locations
-    req_disk_gb = args.req_disk_gb[0]
-
+    job_id = os.getpid()  
     host = os.uname().nodename
     user= os.getenv('USER')
     
-    if job_name == 'None':
-        job_name = 'test'
-    if super_ds_id == 'None':
+    if super_ds_id is None:
         raise Exception("No superdataset ID.")
-    if dl_cmd == 'None':
+    if dl_cmd is None:
         raise Exception("No datalad run command.")
-    if clone_target == 'None':
+    if clone_target is None:
         raise Exception("No clone target.")
-    if push_target == 'None':
+    if push_target is None:
         raise Exception("No push target.")
-    if 'None' in inputs:
-        inputs = None
-    if 'None' in outputs:
-        outputs = None
     
-    if isinstance(req_disk_gb, str):
-        req_disk_gb = float(req_disk_gb)
-
     status_lock = FileLock(status_lockfile)
     push_lock = FileLock(push_lockfile)
-
 
     # Functions for disk space management
     def get_locations(location_list):
@@ -300,13 +299,15 @@ if __name__ == '__main__':
     #######################
     # Resource management #
     #######################
-    if 'None' in ephemeral_locations:
+    if ephemeral_locations is None:
         ephemeral_locations = ['/tmp']
         
     tmp, not_tmp_locations = get_locations(ephemeral_locations)
 
     # manage available disk space
-    if req_disk_gb == 'None' or req_disk_gb < 0:
+    if req_disk_gb is None:
+        req_disk_gb = 0
+    elif req_disk_gb < 0:
         req_disk_gb = 0
         
     with status_lock:
@@ -402,9 +403,10 @@ if __name__ == '__main__':
     ds = dl.Dataset(job_dir)
     sd = pd.DataFrame(ds.subdatasets())
     
+    # input_datasets = sd.query('not gitmodule_name.isin(@output_datasets)')['gitmodule_name']
 
-    if 'None' in output_datasets:
-        output_datasets = []
+    # for input_dataset in input_datasets:
+    #     dl.get(input_dataset, get_data=False)
 
     if output_datasets and not (pd.Series(output_datasets).isin(sd['gitmodule_name']).all()):
         raise Exception("Not all output datasets are found.")
@@ -435,8 +437,6 @@ if __name__ == '__main__':
     do_checkout(branch_name, 'cwd')
 
     # Preget inputs
-    if 'None' in preget_inputs:
-        preget_inputs = []
     for preget_input in preget_inputs:
         dl.get(preget_input)
 
@@ -444,17 +444,17 @@ if __name__ == '__main__':
     #       DATALAD RUN JOB       #
     ###############################
     print("Run command.")
-    if message == 'None':
+    if message is None:
         message = branch_name
     
 
-    if commit != "None":
+    if commit is not None:
         dl.rerun(
             revision=commit,
             explicit=is_explicit
         )
         
-    elif container != "None":
+    elif container is not None:
         dl.containers_run(
             dl_cmd,
             container_name=container,

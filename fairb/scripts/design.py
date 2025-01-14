@@ -1,4 +1,10 @@
-# Author: Diego Ramírez González
+"""
+Author: Diego Ramírez González
+Create an array of jobs for FAIR parallel processing.
+See:
+Wagner, A. S., Waite, L. K., Wierzba, M., Hoffstaedter, F., Waite, A. Q., Poldrack, B., ... & Hanke, M. (2022). FAIRly big: A framework for computationally reproducible processing of large-scale data. Scientific data, 9(1), 80.
+"""
+
 import json
 from argparse import ArgumentParser
 from pathlib import Path
@@ -9,6 +15,19 @@ import operator
 import datalad.api as dl
 import pandas as pd
 import numpy as np
+from fairb.core import FairB
+
+def list_to_str(x):
+    """
+    Convert a list to a string separated by spaces.
+    """
+    if not x:
+        return None
+    else:
+        final_string = ''
+        for string in x:
+            final_string += f'{string} '
+        return final_string.strip()
 
 def is_numeric(x):
     try:
@@ -62,7 +81,7 @@ def create_command_df(variable_commands_string):
     return command_df
 
 
-def call_glob(cmd):
+def call_glob(cmd, super_dataset_path):
     """
     Return an ordered list of glob results relative to super dataset.
     """
@@ -125,7 +144,7 @@ def call_write(cmd):
     return cmd.split()
 
 
-def call_replace(cmd, values):
+def call_replace(cmd, values, variables):
     """
     Replace a string pattern from existing values. 
     Can call existing variables within 'cmd' using double curly brackets.
@@ -178,7 +197,7 @@ def call_grep(cmd, values):
     return values
 
 
-def call_repeat(cmd, values):
+def call_repeat(cmd, values, variables):
     "Repeat existing values."
     if isinstance(values, str):
         values = values.split()
@@ -194,7 +213,7 @@ def call_repeat(cmd, values):
     return values
 
 
-def call_is_in(cmd, values):
+def call_is_in(cmd, values, variables):
     """
     Return values in common between two existing variables.
     """
@@ -215,7 +234,7 @@ def call_is_in(cmd, values):
     return values[values.isin(variable)].to_list()
 
 
-def call_not_in(cmd, values):
+def call_not_in(cmd, values, variables):
     """
     Return values not in common between two existing variables.
     """
@@ -236,7 +255,7 @@ def call_not_in(cmd, values):
     return values[~values.isin(variable)].to_list()
     
 
-def call_multiply(cmd, values):
+def call_multiply(cmd, values, variables):
     "Multiply existing values."
     if isinstance(values, str):
         values = values.split()
@@ -258,7 +277,7 @@ def call_unique(values):
     return pd.Series(['pcc', 'acc', 'pcc']).drop_duplicates(keep='first').to_list()
     
 
-def call_exists(values):
+def call_exists(values, super_dataset_path):
     """
     
     """
@@ -275,7 +294,7 @@ def call_exists(values):
     return values
     
 
-def select_command(command_name, command, values=None, variables=None, current_variable_name=None):
+def select_command(command_name, command, values=None, variables=None, super_dataset_path=None):
     """
     Select one of the possible 9 commands and return the values.
     """
@@ -285,7 +304,7 @@ def select_command(command_name, command, values=None, variables=None, current_v
             return call_drop()
         
         case 'glob':
-            return call_glob(command)
+            return call_glob(command, super_dataset_path)
 
         case 'write':
             return call_write(command)
@@ -301,7 +320,7 @@ def select_command(command_name, command, values=None, variables=None, current_v
         # non-first commands    
         case 'replace':
             assert values, "Can't use 'replace' without existing values."
-            return call_replace(command, values)
+            return call_replace(command, values, variables)
         
         case 'grep':
             assert values, "Can't use 'grep' without existing values."
@@ -335,8 +354,9 @@ def select_command(command_name, command, values=None, variables=None, current_v
             raise Exception("Non-existing command selected.")
             
 
-def main():
+def main(args):
     
+    # arguments
     parser = ArgumentParser(
         prog="fairb_create",
         description="Create an array of jobs for FAIR parallel processing."
@@ -350,7 +370,7 @@ def main():
     fairlybig.add_argument(
         '-c',
         '--path',
-        type='str',
+        type=str,
         default='.',
         help='Path to fairlybig project (must contain a valid config file).'
     )
@@ -368,8 +388,7 @@ def main():
     job_definition.add_argument(
         "job_name",
         type=str,
-        help="placeholder",
-        required=True
+        help="placeholder"
     )
     job_definition.add_argument(
         "--inputs",
@@ -391,12 +410,12 @@ def main():
         help="placeholder",
         required=False
     )
-    # misc.add_argument(
-    #     "--message",
-    #     type=str,
-    #     help="placeholder",
-    #     required=False
-    # )
+    misc.add_argument(
+        "--message",
+        type=str,
+        help="placeholder",
+        required=False
+    )
     
     job_resources.add_argument(
         "--req_disk_gb",
@@ -416,6 +435,7 @@ def main():
         "--slots",
         type=int,
         help="placeholder",
+        default=1,
         required=False
     )
     
@@ -430,6 +450,7 @@ def main():
         "--h_rt",
         type=str,
         help="placeholder",
+        default='24:00:00',
         required=False
     )
 
@@ -439,49 +460,39 @@ def main():
         help="placeholder",
         required=False
     )
+    job_resources.add_argument(
+        "--ephemeral_locations",
+        type=str,
+        help="placeholder",
+        required=False
+    )
+    job_resources.add_argument(
+        "--is_explicit",
+        action="store_true",
+        help="placeholder"
+    )
     
-    args = parser.parse_args()
+    args = parser.parse_args(args)
     
+    # assertions
     fairb_root = Path(args.path)
     assert fairb_root.exists(), "fairb project directory doesn't exist."
+    fairb_config_path = fairb_root / 'fairb.json'
+    assert fairb_config_path.exists(), "No fairb.json found."
     
-    fairb_config_path = fairb_root / 'fairb_config.json'
-    assert fairb_config_path.exists(), "No fairb_config.json found."
-    
-    with open(fairb_config_path, 'r') as json_file:
-        fairb_config = json.load(json_file)
+    fairb = FairB.from_json(str(fairb_config_path))
+    super_dataset_path = str(fairb_root.parent.absolute())
 
-
-    #      'job_name','dl_cmd','container','inputs',
-    #  'outputs':[None]
-    #  'is_explicit':[False],
-    #  'output_datasets':[output_datasets_string],
-    #  'prereq_get':[None],
-    #  'message':[None],
-    #  'super_id':super_dataset_id,
-    #  'clone_target':[input_ria_path],
-    #  'push_target':[output_ria_path],
-    #  'ephemeral_location':["/tmp /misc/{host}[0-9]/"+user],
-    #  'req_disk_gb':[None],
-    #  'queue':['all.q'],
-    #  'slots':[None],
-    #  'vmem':[None],
-    #  'h_rt':[None],
-    #  'env_vars':[None],
-    #  'batch':['001']
-    # list(fairb_config.keys())
-    
-    
-    
-    super_dataset_path = Path('/misc/geminis2/ramirezd/test_bet/')
-    variable_definition_string = "svs == <!glob>(inputs/mri-raw/sub-*/mrs/*acq-press*svs.nii.gz) ; subject == <!variable>(svs)<!grep>(sub-\w+); t1w == <!paste> (inputs/mri-raw/{subject}/anat/{subject}_T1w.nii.gz) ; t2w == <!variable>(t1w)<!replace>(T1w T2w)<!exists> ; ref == <!variable>(svs)<!replace>(svs(?=.nii.gz) ref)<!exists> "
-
-    variable_definition_string = "voi == <!write>(acc pcc)<!multiply>5"
+    ## example
+    # super_dataset_path = Path('/misc/geminis2/ramirezd/test_bet/')
+    # variable_definition_string = "svs == <!glob>(inputs/mri-raw/sub-*/mrs/*acq-press*svs.nii.gz) ; subject == <!variable>(svs)<!grep>(sub-\w+); t1w == <!paste> (inputs/mri-raw/{subject}/anat/{subject}_T1w.nii.gz) ; t2w == <!variable>(t1w)<!replace>(T1w T2w)<!exists> ; ref == <!variable>(svs)<!replace>(svs(?=.nii.gz) ref)<!exists> "
+    # variable_definition_string = "voi == <!write>(acc pcc)<!multiply>5"
 
     # Create a tuple of variable-commands
+    
     variable_command = []
 
-    for index, variable_definition in enumerate(variable_definition_string.split(';')):
+    for index, variable_definition in enumerate(args.variables.split(';')):
         variable_name = variable_definition.split('==')[0].strip()
         variable_commands_string = variable_definition.split('==')[1].strip()
         command_df = create_command_df(variable_commands_string)
@@ -490,7 +501,6 @@ def main():
 
     # Create a dictionary of variable-values
     variables = {}
-
     len_dict = {}
     max_len=0
 
@@ -501,7 +511,8 @@ def main():
                 command_row.command_name,
                 command_row.command,
                 values,
-                variables
+                variables,
+                super_dataset_path
                 )
         
         # Drop variable if it's None and skip next steps
@@ -533,22 +544,69 @@ def main():
     else:
         raise Exception("Can't broadcast variables.")
     
-    dl_cmd = "bet inputs/mri_raw/{subject}/anat/{subject}_T1w.nii.gz outputs/bet/{subject}_T1w_bet.nii.gz --radom_seed <!random>"
-    inputs = "inputs/mri_raw/{subject}/anat/{subject}_T1w.nii.gz"
-    outputs = "outputs/bet/{subject}_T1w_bet.nii.gz"
-    job_name = "{subject}_T1w_bet"
-    job_dict = {'job_name':[], 'dl_cmd':[], 'inputs':[], 'outputs':[]}
+    # example:
+    # dl_cmd = "bet inputs/mri_raw/{subject}/anat/{subject}_T1w.nii.gz outputs/bet/{subject}_T1w_bet.nii.gz --radom_seed <!random>"
+    # inputs = "inputs/mri_raw/{subject}/anat/{subject}_T1w.nii.gz"
+    # outputs = "outputs/bet/{subject}_T1w_bet.nii.gz"
+    # job_name = "{subject}_T1w_bet"
+    job_dict = {'job_name':[], 'dl_cmd':[], 'inputs':[], 'outputs':[], 
+                # 'input_datasets':[], 
+                'output_datasets':[]}
 
-    if ("<!random>" in dl_cmd) and not "{random_seed}" in dl_cmd:
+    if ("<!random>" in args.dl_cmd):
         random_seeds=[]
         for i in range(max_len):
             random_seeds.append(get_random_seed())
         
-        dl_cmd = re.sub("<!random>", "{random_seed}", dl_cmd)
+        dl_cmd = re.sub("<!random>", "{random_seed}", args.dl_cmd)
         variables['random_seed'] = random_seeds
 
     for row_dict in pd.DataFrame(variables).dropna().to_dict(orient='records'):
-        job_dict['job_name'].append(job_name.format(**row_dict))
-        job_dict['dl_cmd'].append(dl_cmd.format(**row_dict))
-        job_dict['inputs'].append(inputs.format(**row_dict))
-        job_dict['outputs'].append(outputs.format(**row_dict))
+        
+        job_dict['job_name'].append(args.job_name.format(**row_dict))
+        job_dict['dl_cmd'].append(args.dl_cmd.format(**row_dict))
+        
+        job_inputs = args.inputs.format(**row_dict)
+        job_outputs = args.outputs.format(**row_dict)
+        job_dict['inputs'].append(job_inputs)
+        job_dict['outputs'].append(job_outputs)
+        
+        job_output_datasets = list_to_str([output_dataset for output_dataset in fairb.output_datasets if output_dataset in job_outputs])
+        # job_input_datasets = list_to_str([input_dataset for input_dataset in fairb.input_datasets if input_dataset in job_inputs])
+        job_dict['output_datasets'].append(job_output_datasets)
+        # job_dict['input_datasets'].append(job_input_datasets)
+        
+    job_df = pd.DataFrame(job_dict)
+    job_df['queue'] = args.queue
+    job_df['slots'] = args.slots 
+    job_df['vmem'] = args.vmem 
+    job_df['h_rt'] = args.h_rt 
+    job_df['env_vars'] = args.env_vars 
+    
+    job_df['container'] = fairb.container
+    job_df['commit'] = None
+    job_df['is_explicit'] = args.is_explicit
+    
+    if fairb.output_datasets:
+        job_output_datasets_string = ''
+        for output_dataset in fairb.output_datasets:
+            job_output_datasets_string += f'{output_dataset} '
+        job_df['output_datasets'] = job_output_datasets_string.strip()
+    else:
+        job_df['output_datasets'] = None
+    
+    job_df['prereq_get'] = args.prereq_get
+    job_df['message'] = args.message
+    job_df['super_id'] = fairb.super_id
+    job_df['clone_target'] = fairb.clone_target
+    job_df['push_target'] = fairb.push_target
+    job_df['ephemeral_location'] = args.ephemeral_locations
+    job_df['req_disk_gb'] = args.req_disk_gb
+    job_df['batch'] = fairb.current_batch
+ 
+    
+    
+    job_df.to_csv(fairb_root/'job_config.csv', index=False)
+    
+# if __name__ == "__main__":
+#     main()
