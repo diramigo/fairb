@@ -90,7 +90,7 @@ def main(args):
     njobs = parser.add_mutually_exclusive_group()
     njobs.add_argument('-j','--jobs', nargs='+', help="Submit a given job by it's name if it's available.")
     njobs.add_argument('-n','--njobs', type=int, help="Submit a given number of available jobs.")
-    njobs.add_argument('-a','--all', type=int, help="Submit all available jobs.")
+    njobs.add_argument('-a','--all', action='store_true', help="Submit all available jobs.")
     
     parser.add_argument('-c','--fairb', type=str, help="Path to the fairb project containing the fairb.json file. Defaults to the current working directory", default='.')
     args = parser.parse_args(args)
