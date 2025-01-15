@@ -2,6 +2,7 @@ from argparse import ArgumentParser
 import os
 from pathlib import Path
 import json
+import re
 
 import datalad.api as dl
 import pandas as pd
@@ -32,6 +33,14 @@ def main(args):
         required=False,
         default=[]
         )
+    parser.add_argument(
+        '--project_name', 
+        type=str, 
+        help='Name of the project.',
+        required=False,
+        default='fairb'
+        )
+    
     container_args = parser.add_argument_group()
     
     container_args.add_argument(
@@ -82,10 +91,23 @@ def main(args):
     # Add output datasets
     outputs_root = (Path(super_dataset) / 'outputs').absolute()
     outputs_root.mkdir()
+    output_dataset_paths = []
+    output_dataset_relpaths = []
     for output_dataset in output_datasets:
-        output_dataset_path = str(outputs_root / output_dataset)
+        
+        if str(Path(output_dataset).parents[0]) == 'outputs':
+            output_dataset_path =  str(Path(super_dataset).absolute() / output_dataset)
+            output_dataset_relpaths.append(output_dataset)
+        else:
+            output_dataset_path = str(outputs_root / output_dataset)
+            output_dataset_relpaths.append(str(Path('outputs') / output_dataset))
+            
         dl.create(output_dataset_path, dataset=super_dataset)
         
+        output_dataset_paths.append(output_dataset_path)
+
+
+
     # Add .gitignore
     gitignore_path = Path(super_dataset) / '.gitignore'
     with open(gitignore_path, 'w') as gitignore_file:
@@ -118,10 +140,8 @@ def main(args):
     dl.push(dataset=super_dataset, to='input_ria')
     
     # Create output subdataset output and input ria
-    if output_datasets:
-        for output_dataset in output_datasets:
-            
-            output_dataset_path = str(outputs_root / output_dataset)
+    if output_dataset_paths:
+        for output_dataset_path in output_dataset_paths:
             
             dl.create_sibling_ria(
                 f'ria+file://{output_ria_path}',
@@ -150,7 +170,7 @@ def main(args):
     
     # Create fairb project
     fairb_path = Path(super_dataset) / '.fairb'
-    fairb_project = FairB('fairb', super_dataset_id, str(fairb_path.resolve()), input_datasets, output_datasets, container_name, input_ria_path, output_ria_path)
+    fairb_project = FairB(args.project_name, super_dataset_id, str(fairb_path.resolve()), input_datasets, output_dataset_relpaths, container_name, input_ria_path, output_ria_path)
     fairb_project.to_json()
     
     
