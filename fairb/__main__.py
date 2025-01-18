@@ -1,13 +1,13 @@
 import argparse
 import sys
-from fairb.scripts import create, design, run, submit
+from fairb.scripts import create, design, run, submit, merge
 
 def main():
     parser = argparse.ArgumentParser(
         description="CLI para ejecutar scripts en mi_paquete."
     )
     parser.add_argument(
-        "script", choices=["create", "design", "run", "submit"], help="El script a ejecutar"
+        "script", choices=["create", "design", "run", "submit", "merge"], help="El script a ejecutar"
     )
     parser.add_argument(
         "args", nargs=argparse.REMAINDER, help="Argumentos para el script seleccionado"
@@ -23,6 +23,8 @@ def main():
         run.main(args.args)
     elif args.script == "submit":
         submit.main(args.args)
+    elif args.script == "merge":
+        merge.main(args.args)
 
 if __name__ == "__main__":
     main()
