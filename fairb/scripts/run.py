@@ -22,6 +22,7 @@ def main(args):
     import pandas as pd
     import numpy as np
     from fairb.core import FairB
+    from fairb.utils.git import do_checkout, get_private_subdataset, git_add_remote, git_push
 
 
     parser = ArgumentParser()
@@ -234,62 +235,6 @@ def main(args):
         
         return status_df
 
-
-    # Functions for cloning and checking out
-    def do_dead_annex(dpath='cwd'):
-        """
-        Set cwd as dead annex or submodules as dead annex.
-        """
-        if dpath == 'cwd':
-            cmd = ['git', 'annex', 'dead', 'here']
-        else: 
-            cmd = ['git', 'submodule', 'foreach', '--recursive', 'git', 'annex', 'dead', 'here']
-        subprocess.run(cmd)
-        
-
-    def do_checkout(job_name, dpath='cwd'):
-        """
-        Change to a job branch.
-        """
-        if dpath == 'cwd':
-            cmd = ['git', 'checkout', '-b', job_name]
-        else:
-            cmd = ['git', '-C', dpath ,'checkout', '-b', job_name]
-        
-        subprocess.run(cmd)
-
-        
-    def get_private_subdataset(clone_target, sd_path, sd_id):
-        # Assume clone_target is a RIA store
-        clone_path = str(Path(clone_target) / Path(sd_id[:3]) / Path(sd_id[3:]))
-        
-        git_clone_command = ['git', 'clone', clone_path, sd_path]
-        subprocess.run(git_clone_command)
-        
-        git_config_annex_private = ['git', '-C', sd_path, 'config', 'annex.private', 'true']
-        subprocess.run(git_config_annex_private)
-        
-        git_annex_init = ['git', '-C', sd_path, 'annex', 'init']
-        subprocess.run(git_annex_init)
-
-
-    def git_add_remote(push_path, dpath='cwd'):
-        if dpath == 'cwd':
-            cmd = ['git', 'remote', 'add', 'outputstore', push_path]
-        else:
-            cmd = ['git', '-C', dpath, 'remote', 'add', 'outputstore', push_path]
-            
-        subprocess.run(cmd)
-
-    def git_push(dpath='cwd'):
-        if dpath == 'cwd':
-            cmd = ['git', 'push', 'outputstore']
-        else:
-            cmd = ['git', '-C', dpath, 'push', 'outputstore']
-        
-        subprocess.run(cmd)
-
-
     # cleanup and exception handling
     def cleanup(job_dir):
         subprocess.run(['chmod', '-R', '+w', job_dir])
@@ -337,7 +282,7 @@ def main(args):
                 
                 
         if found_location:
-            job_dir = str(Path(location) / f'job-{job_name}-{user}')
+            job_dir = str(Path(location) / f'{job_name}_{user}')
             set_status(status_csv, job_name, job_id, req_disk_gb, host, location, job_dir, status='ongoing', start=datetime.today().strftime("%Y/%m/%d %H:%M:%S"))
         else:
             set_status(status_csv, job_name, job_id, req_disk_gb, host, location=None, job_dir=None, status='no-space', start=datetime.today().strftime("%Y/%m/%d %H:%M:%S"))
@@ -431,7 +376,7 @@ def main(args):
         
     # Checkout to job branch
     print("Checkout branch.")
-    branch_name = f'job-{job_name}'
+    branch_name = f'{job_name}'
     for output_dataset in output_datasets:
         do_checkout(branch_name, output_dataset)
     do_checkout(branch_name, 'cwd')

@@ -27,7 +27,7 @@ def write_script(job_name, fairb_path, job_root=None):
         job_root = Path(fairb_path) / 'code'
         job_root.mkdir(exist_ok=True)
      
-    script_path = str(Path(job_root) / f'job-{job_name}.sh')
+    script_path = str(Path(job_root) / f'{job_name}.sh')
     
     fairb_path = str(Path(fairb_path).absolute())
     
