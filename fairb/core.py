@@ -186,6 +186,8 @@ class FairB():
         return None
     
     def get_available_jobs(self):
+        """Get job names that are not completed."""
+        
         if self.job_status_df is None:
             self.job_status_df = self.read_job_status()
         
@@ -194,4 +196,24 @@ class FairB():
         
         return available_jobs
     
-    
+    def get_completed_jobs(self):
+        """
+        Get job names of current batch that are completed.
+        """
+        
+        if self.job_status_df is None:
+            self.job_status_df = self.read_job_status()
+        if self.job_config_df is None:
+            self.job_config_df = self.read_job_status()
+        
+        completed_jobs = (self.job_config_df
+         .merge(
+             self.job_status_df[['job_name', 'status']],
+             on='job_name'
+          )
+         .query("status == 'completed' and batch == @self.current_batch")
+         ['job_name']
+         .to_list()
+         )
+        
+        return completed_jobs
