@@ -56,8 +56,8 @@ def create_command_df(variable_commands_string):
     
     command_value = {'drop':1, 'glob':1,'variable':1,'paste':1,'write':1,'replace':-1, 'is_in':-1, 'not_in':-1, 'grep':-1,'unique':-1,'multiply':-1, 'repeat':-1,'exists':-1}
     
-    command_names = re.findall("(?<=\<!)\w+(?=\>)", variable_commands_string)
-    commands =  re.sub('<!\w+>', '<!command>', variable_commands_string).split('<!command>')[1:]
+    command_names = re.findall(r"(?<=\<!)\w+(?=\>)", variable_commands_string)
+    commands =  re.sub(r'<!\w+>', '<!command>', variable_commands_string).split('<!command>')[1:]
     
     command_df = (pd.DataFrame({'command_name':command_names, 'command':commands})
     .assign(
@@ -86,7 +86,7 @@ def call_glob(cmd, super_dataset_path):
     Return an ordered list of glob results relative to super dataset.
     """
     
-    glob_characters = '[a-z,A-Z,0-9,\\,\/,\-,_,\.,\*,\[,\],\:,\+,\?,\!,\s]'
+    glob_characters = r'[a-z,A-Z,0-9,\\,\/,\-,_,\.,\*,\[,\],\:,\+,\?,\!,\s]'
     assert super_dataset_path, "No known super dataset for globbing."
     
     try:
@@ -107,7 +107,7 @@ def call_variable(cmd, variables):
     """
     Get the values from an existing variable.
     """
-    variable_characters = '[a-z,A-Z,0-9,\-,_,]'
+    variable_characters = r'[a-z,A-Z,0-9,\-,_,]'
     try:
         variable_name = re.search(f"{variable_characters}+", cmd).group()
     except:
@@ -127,7 +127,7 @@ def call_paste(cmd, variables):
     Returns a list of values.
     """
     
-    paste_variables = list(set(re.findall('(?<=\{)[\w,_,-]+(?=\})', cmd)))
+    paste_variables = list(set(re.findall(r'(?<=\{)[\w,_,-]+(?=\})', cmd)))
     
     assert pd.Series(paste_variables).isin(variables.keys()).all(), "Not all variables in 'paste' exist."
     
@@ -166,7 +166,7 @@ def call_replace(cmd, values, variables):
         
     values = new_values
         
-    replacement_variables = re.findall("(?<={)\w+(?=})", '{subject}')
+    replacement_variables = re.findall(r"(?<={)\w+(?=})", '{subject}')
     if replacement_variables:
         if not pd.Series(replacement_variables).isin(variables.keys()).all():
             raise Exception("Not all variables inside <!replace> exist.")
@@ -219,7 +219,7 @@ def call_is_in(cmd, values, variables):
     """
     variable = cmd.strip()
     
-    variable_characters = '[a-z,A-Z,0-9,\-,_,]'
+    variable_characters = r'[a-z,A-Z,0-9,\-,_,]'
     try:
         variable = re.search(f"{variable_characters}+", variable).group()
     except:
@@ -240,7 +240,7 @@ def call_not_in(cmd, values, variables):
     """
     variable = cmd.strip()
     
-    variable_characters = '[a-z,A-Z,0-9,\-,_,]'
+    variable_characters = r'[a-z,A-Z,0-9,\-,_,]'
     try:
         variable = re.search(f"{variable_characters}+", variable).group()
     except:
@@ -558,7 +558,7 @@ def main(args):
         for i in range(max_len):
             random_seeds.append(get_random_seed())
         
-        dl_cmd = re.sub("<!random>", "{random_seed}", args.dl_cmd)
+        args.dl_cmd = re.sub("<!random>", "{random_seed}", args.dl_cmd)
         variables['random_seed'] = random_seeds
 
     for row_dict in pd.DataFrame(variables).dropna().to_dict(orient='records'):
