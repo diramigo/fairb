@@ -59,8 +59,14 @@ def main(args):
         '--call_fmt', 
         type=str, 
         required=False, 
-        default="apptainer run -e {img} {cmd}"
+        default="apptainer exec -e {img} {cmd}"
         )
+    container_args.add_argument(
+        '--git_ignore', 
+        nargs='+', 
+        required=False,
+        )
+
 
     args = parser.parse_args(args)
     super_dataset = args.super_dataset
@@ -111,7 +117,11 @@ def main(args):
     # Add .gitignore
     gitignore_path = Path(super_dataset) / '.gitignore'
     with open(gitignore_path, 'w') as gitignore_file:
-        gitignore_file.write('.fairb')
+        gitignore_file.write('.fairb\n')
+        if args.git_ignore:
+            for git_ignore_text in args.git_ignore:
+                gitignore_file.write(f'{git_ignore_text}\n')
+        
     dl.save(dataset=super_dataset, message='Add .gitignore')
     
     # Get datalad id
