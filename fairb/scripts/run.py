@@ -70,7 +70,7 @@ def main(args):
     container = job_config.container
     message = job_config.message
     ephemeral_locations = job_config.ephemeral_location
-    req_disk_gb = job_config.req_disk_gb
+    req_disk_gb = float(job_config.req_disk_gb)
 
     job_id = os.getpid()  
     host = os.uname().nodename
@@ -89,7 +89,7 @@ def main(args):
     push_lock = FileLock(push_lockfile)
 
     # Functions for disk space management
-    def get_locations(location_list):
+    def get_locations(location_list, host, user):
         """
         Return tmp and non_tmp locations from the list of location patterns.
         """
@@ -108,28 +108,34 @@ def main(args):
         # get non_tmp locations according to the non_tmp_patterns (the script can accept multiple location patterns)
         for not_tmp_pattern in not_tmp_patterns:
             
-            for index, part in enumerate(Path(not_tmp_pattern).parts):
-                if host in part:
-                    break
-
-            # node location
-            mount_pattern = str(Path(*list(Path(not_tmp_pattern).parts[:index+1])))
-            # location inside node
-            after_pattern = str(Path(*list(Path(not_tmp_pattern).parts[index+1:])))
+            if 'HOST' not in not_tmp_pattern:
+                not_tmp_locations.append(not_tmp_pattern)
             
-            # make sure those locations are within the node with the /etc/mtab file
-            with open('/etc/mtab', 'r') as mtab:
-                for line in mtab.readlines():
-                    # which mount pattern is within the node
-                    pattern = re.search(f'{mount_pattern} ', line)
-                    # which directories (after mount pattern) are within that mount
-                    if pattern:
-                        pattern_glob = Path(pattern.group().strip()).glob(after_pattern) 
-                    else:
-                        continue
-                    # after mount pattern could retrieve multiple locations
-                    if pattern_glob: 
-                        not_tmp_locations += [str(pg) for pg in pattern_glob]
+            else:
+                not_tmp_pattern = not_tmp_pattern.format(HOST=host, USER=user)
+            
+                for index, part in enumerate(Path(not_tmp_pattern).parts):
+                    if host in part:
+                        break
+
+                # node location
+                mount_pattern = str(Path(*list(Path(not_tmp_pattern).parts[:index+1])))
+                # location inside node
+                after_pattern = str(Path(*list(Path(not_tmp_pattern).parts[index+1:])))
+                
+                # make sure those locations are within the node with the /etc/mtab file
+                with open('/etc/mtab', 'r') as mtab:
+                    for line in mtab.readlines():
+                        # which mount pattern is within the node
+                        pattern = re.search(f'{mount_pattern} ', line)
+                        # which directories (after mount pattern) are within that mount
+                        if pattern:
+                            pattern_glob = Path(pattern.group().strip()).glob(after_pattern) 
+                        else:
+                            continue
+                        # after mount pattern could retrieve multiple locations
+                        if pattern_glob: 
+                            not_tmp_locations += [str(pg) for pg in pattern_glob]            
         
         return tmp, not_tmp_locations
 
@@ -246,9 +252,11 @@ def main(args):
     #######################
     if ephemeral_locations is None:
         ephemeral_locations = ['/tmp']
-        
-    tmp, not_tmp_locations = get_locations(ephemeral_locations)
-
+    else:
+        ephemeral_locations = [location.format(host=host, user=user)for location in ephemeral_locations.split()]
+    
+    tmp, not_tmp_locations = get_locations(ephemeral_locations, host, user)
+    
     # manage available disk space
     if req_disk_gb is None:
         req_disk_gb = 0
@@ -267,26 +275,26 @@ def main(args):
                 location=tmp
                 
         
-        elif not_tmp_locations and not found_location:
+        if not_tmp_locations and not found_location:
             not_tmp_df = (
                 pd.DataFrame({'location':not_tmp_locations})
                 .assign(available_disk = lambda df_: 
                     df_['location'].apply(lambda x_: get_available_disk_resource(x_, host, status_csv))
                     )
-                .sort_values('free_space', ascending=False)
+                .sort_values('available_disk', ascending=False)
                 )
 
             if req_disk_gb < not_tmp_df['available_disk'].iat[0]:
                 found_location = True
                 location = not_tmp_df['location'].iat[0]
                 
-                
         if found_location:
             job_dir = str(Path(location) / f'{job_name}_{user}')
             set_status(status_csv, job_name, job_id, req_disk_gb, host, location, job_dir, status='ongoing', start=datetime.today().strftime("%Y/%m/%d %H:%M:%S"))
         else:
             set_status(status_csv, job_name, job_id, req_disk_gb, host, location=None, job_dir=None, status='no-space', start=datetime.today().strftime("%Y/%m/%d %H:%M:%S"))
-            raise Exception("Coulnd't find a place with enough disk space.")
+            
+            raise Exception("Couldn't find a place with enough disk space.")
 
 
     def excepthook(exctype, value, tb):
